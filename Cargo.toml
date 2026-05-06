@@ -2,6 +2,7 @@
 name = "warden-shadow-scanner"
 version = "0.1.0"
 edition = "2024"
+publish = false
 description = "Free discovery tool that scans GitHub/Slack/local-fs for unauthorized agent credentials."
 
 [[bin]]
