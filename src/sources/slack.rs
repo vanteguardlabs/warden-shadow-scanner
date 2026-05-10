@@ -1,18 +1,13 @@
-//! Slack source.
-//!
-//! Calls Slack's Web API directly. Auth via `SLACK_BOT_TOKEN`
-//! (`xoxb-…`). Required scopes:
+//! Slack source. Auth via `SLACK_BOT_TOKEN` (`xoxb-…`). Required scopes:
 //!
 //! * `channels:read` (and `groups:read` for private channels the bot is in),
 //! * `channels:history` (+ `groups:history`, `mpim:history`, `im:history`),
 //! * `users:read` (optional — only used to attribute findings to a user).
 //!
-//! For each conversation the bot is a member of, paginate
-//! `conversations.history` from `now - days` and scan each message's
-//! `text` field. Threads, archived channels, and external shared
-//! channels are intentionally out of scope for the MVP — covering them
-//! adds API surface without much marginal lift over "did anyone paste a
-//! key into a public channel."
+//! Threads, archived channels, and external shared channels are
+//! intentionally out of scope for the MVP — covering them adds API
+//! surface without much marginal lift over "did anyone paste a key into
+//! a public channel."
 
 use crate::detector::{scan_text, Finding};
 use anyhow::{bail, Context, Result};

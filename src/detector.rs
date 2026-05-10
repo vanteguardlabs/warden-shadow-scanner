@@ -15,24 +15,13 @@
 //!
 //! Findings hold the **raw** secret in [`Finding::raw_match`] (so callers
 //! that need to verify the hit can do so), but every formatter MUST go
-//! through [`Finding::redacted_snippet`] for human consumption. The CLI
-//! redacts by default; `--unredacted` flips it back at the user's
-//! explicit request, with a banner reminding them they're producing a
-//! secrets file.
+//! through redacted forms for human consumption. The CLI redacts by
+//! default; `--unredacted` flips it back at the user's explicit request,
+//! with a banner reminding them they're producing a secrets file.
 //!
-//! # Rust idioms in this file (for non-Rust readers)
-//!
-//! * `OnceLock<Vec<Detector>>` — a process-wide lazy initializer. The
-//!   regex set is parsed once on first call and reused for every scan.
-//!   Cheaper than `lazy_static!` for one-shot tools and stable in std.
-//! * `Regex::captures_iter(line)` — yields every match in a line; we
-//!   take group 1 if the pattern has one, else the whole match. Keeping
-//!   the convention "group 1 is the secret if present" lets us strip
-//!   prefix anchors from the redacted output.
-//! * Shannon entropy — `H = -Σ p_i log2 p_i` over byte frequencies.
-//!   Random base64 lands around 4.5–5.5 bits/byte; English text is
-//!   closer to 4.0. We use 4.0 as the lower-bound gate for the generic
-//!   detector, with a length floor so short identifiers don't trip it.
+//! Generic-detector entropy floor is 4.0 bits/byte: random base64 lands
+//! 4.5–5.5, English prose ~4.0, so 4.0 + a length floor keeps short
+//! identifiers from tripping the catch-all rule.
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -354,10 +343,6 @@ pub fn scan_text(text: &str, location: &str) -> Vec<Finding> {
         }
         for det in detectors() {
             for caps in det.pattern.captures_iter(line) {
-                // If the regex defines a capture group, we treat group 1
-                // as the secret; otherwise we use the entire match. This
-                // lets a detector strip a context anchor (e.g. the
-                // "cohere" prefix) from what gets reported as the key.
                 let m = caps.get(1).or_else(|| caps.get(0));
                 let raw = match m {
                     Some(m) => m.as_str(),

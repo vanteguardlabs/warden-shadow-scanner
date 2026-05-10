@@ -1,20 +1,11 @@
-//! GitHub source.
-//!
-//! Calls the REST API directly via `reqwest` (no SDK dep). For each
-//! target repo:
-//!   1. `GET /repos/{owner}/{repo}` to discover the default branch.
-//!   2. `GET /repos/{owner}/{repo}/git/trees/{branch}?recursive=1` to
-//!      list every tracked path.
-//!   3. For each text-shaped path under [`MAX_FILE_BYTES`], fetch the
-//!      raw blob via `Accept: application/vnd.github.raw` and scan.
+//! GitHub source. Calls the REST API directly via `reqwest` — no SDK dep.
 //!
 //! Auth comes from the `GITHUB_TOKEN` env var (PAT or GitHub App token).
-//! Without a token we still hit the public API — useful for the "scan
-//! a public repo" demo path — but rate-limit drops to 60 req/hour.
+//! Without a token we still hit the public API — useful for "scan a
+//! public repo" demos — but rate-limit drops to 60 req/hour.
 //!
-//! Rate-limit handling: 403 with `X-RateLimit-Remaining: 0` triggers a
-//! sleep until `X-RateLimit-Reset`. 429 triggers exponential backoff
-//! capped at 60s. Anything else surfaces as an error.
+//! Rate-limit handling: 403 with `X-RateLimit-Remaining: 0` sleeps until
+//! `X-RateLimit-Reset`; 429 backs off 30s; anything else surfaces.
 
 use crate::detector::{scan_text, Finding};
 use anyhow::{bail, Context, Result};
@@ -352,26 +343,4 @@ mod tests {
         assert!(!has_binary_extension("src/main.rs"));
     }
 
-    #[test]
-    fn next_link_extracts_next_url() {
-        // Mock a `Link` header by constructing a Response is non-trivial
-        // without a server, so we cover the parser directly.
-        let h = r#"<https://api.github.com/orgs/x/repos?page=2>; rel="next", <https://api.github.com/orgs/x/repos?page=10>; rel="last""#;
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("link", reqwest::header::HeaderValue::from_str(h).unwrap());
-        // Reconstruct the parser path by inlining the same logic on
-        // the raw string — `next_link` takes a `Response`, not a header
-        // map, so this test is intentionally a structural regression
-        // check rather than a unit test of the public fn.
-        let mut found = None;
-        for part in h.split(',') {
-            let part = part.trim();
-            if part.contains(r#"rel="next""#) {
-                let start = part.find('<').unwrap();
-                let end = part.find('>').unwrap();
-                found = Some(&part[start + 1..end]);
-            }
-        }
-        assert_eq!(found, Some("https://api.github.com/orgs/x/repos?page=2"));
-    }
 }

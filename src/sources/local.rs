@@ -7,17 +7,8 @@
 //! Each text file under `MAX_FILE_BYTES` is read and scanned. Binaries
 //! are skipped via a NUL-byte heuristic (the same trick git uses).
 //!
-//! # Rust idioms in this file
-//!
-//! * `ignore::WalkBuilder` — gitignore-aware directory iterator.
-//!   `.standard_filters(true)` (the default) honours `.gitignore`,
-//!   `.git/info/exclude`, and the global gitignore. Faster than
-//!   `walkdir` for repo-shaped inputs because it skips `target/` etc.
-//!   automatically.
-//! * `tokio::task::spawn_blocking` — run a synchronous fs call (the
-//!   walker iterator is sync) on tokio's blocking thread pool so we
-//!   don't stall the async runtime. The `ignore` crate has no async
-//!   API today; bridging via `spawn_blocking` is the canonical fix.
+//! `ignore`'s walker is synchronous, so we drive it via
+//! [`tokio::task::spawn_blocking`] to avoid stalling the runtime.
 
 use crate::detector::{scan_text, Finding};
 use anyhow::{Context, Result};
