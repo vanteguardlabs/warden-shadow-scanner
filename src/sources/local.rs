@@ -10,15 +10,10 @@
 //! `ignore`'s walker is synchronous, so we drive it via
 //! [`tokio::task::spawn_blocking`] to avoid stalling the runtime.
 
+use super::{looks_binary, MAX_FILE_BYTES};
 use crate::detector::{scan_text, Finding};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-
-/// Cap on individual file size, in bytes. 1 MiB covers virtually every
-/// hand-edited config / source file; anything bigger is almost certainly
-/// generated (lockfiles, minified bundles, fixtures) and not worth the
-/// regex time.
-pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
 
 /// Scan `root` recursively. Returns every finding from every text file
 /// the walker visits. Errors during a single file are logged and the
@@ -88,13 +83,6 @@ async fn scan_one_file(path: &Path) -> Result<Vec<Finding>> {
         Err(_) => return Ok(Vec::new()), // not UTF-8, skip
     };
     Ok(scan_text(text, &path.display().to_string()))
-}
-
-/// `git`-style binary detection: any NUL byte in the first 8 KiB means
-/// "treat as binary." Cheap and correct enough for our purposes — UTF-8
-/// can't contain NUL, so a positive hit rules out source code.
-fn looks_binary(bytes: &[u8]) -> bool {
-    bytes.iter().take(8192).any(|&b| b == 0)
 }
 
 #[cfg(test)]

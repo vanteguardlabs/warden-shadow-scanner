@@ -7,14 +7,12 @@
 //! Rate-limit handling: 403 with `X-RateLimit-Remaining: 0` sleeps until
 //! `X-RateLimit-Reset`; 429 backs off 30s; anything else surfaces.
 
+use super::{looks_binary, MAX_FILE_BYTES, USER_AGENT_VALUE};
 use crate::detector::{scan_text, Finding};
 use anyhow::{bail, Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::Deserialize;
 use std::time::Duration;
-
-pub const MAX_FILE_BYTES: u64 = 1024 * 1024;
-const USER_AGENT_VALUE: &str = "warden-shadow-scanner/0.1";
 
 #[derive(Debug, Clone)]
 pub struct GitHubClient {
@@ -304,7 +302,7 @@ async fn scan_repo(client: &GitHubClient, owner: &str, repo: &RepoSummary) -> Re
                 continue;
             }
         };
-        if bytes.iter().take(8192).any(|&b| b == 0) {
+        if looks_binary(&bytes) {
             continue;
         }
         let Ok(text) = std::str::from_utf8(&bytes) else { continue };

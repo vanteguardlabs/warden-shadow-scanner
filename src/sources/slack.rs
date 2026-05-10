@@ -9,13 +9,12 @@
 //! surface without much marginal lift over "did anyone paste a key into
 //! a public channel."
 
+use super::USER_AGENT_VALUE;
 use crate::detector::{scan_text, Finding};
 use anyhow::{bail, Context, Result};
 use chrono::{Duration as CDuration, Utc};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 use serde::Deserialize;
-
-const USER_AGENT_VALUE: &str = "warden-shadow-scanner/0.1";
 
 /// How far back to look by default. 14 days covers "did someone paste
 /// a key in the last sprint" without burning rate limit on ancient
