@@ -104,13 +104,13 @@ file:
 ## Detection rules
 
 Hand-written regex set with optional Shannon-entropy + length gates.
-~20 detectors covering:
+~19 detectors covering:
 
 | Category            | Detectors                                                              |
 |---------------------|------------------------------------------------------------------------|
 | AI provider keys    | Anthropic (`sk-ant-…`), OpenAI (`sk-…`), Google AI (`AIza…`), Voyage (`pa-…`), Cohere, Mistral |
 | Cloud provider keys | AWS access key + secret, GCP service-account JSON, Azure client secret |
-| Dev-platform tokens | GitHub PAT/App, Slack bot/user/app tokens, Slack webhook URLs, Stripe live/test, NPM, JWT |
+| Dev-platform tokens | GitHub token (PAT / OAuth / App / refresh — `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`), Slack bot/user/app tokens, Slack webhook URLs, Stripe live/test, NPM, JWT |
 | Cryptographic       | PEM private-key block opener                                           |
 | Generic backstop    | High-entropy string near `key`/`token`/`secret`/`password` keyword     |
 
