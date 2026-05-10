@@ -75,11 +75,23 @@ impl Report {
                 entry.severity = f.severity;
                 entry.detector = f.detector.clone();
             }
-            entry.locations.push(Location {
-                location: f.location.clone(),
-                line: f.line,
-                context: f.context.clone(),
-            });
+            // Dedupe by (location, line): a vendor detector and the
+            // generic backstop often fire on the same physical hit
+            // (`OPENAI_API_KEY="sk-…"` matches both `openai_api_key`
+            // and `generic_high_entropy_secret`). Without this guard
+            // the README's "12 files → 12 locations" promise inflates
+            // to 24 when two detectors agree on every line.
+            let dup = entry
+                .locations
+                .iter()
+                .any(|l| l.location == f.location && l.line == f.line);
+            if !dup {
+                entry.locations.push(Location {
+                    location: f.location.clone(),
+                    line: f.line,
+                    context: f.context.clone(),
+                });
+            }
         }
         // Sort aggregates by severity then detector name for stable output.
         let mut aggregates: Vec<Aggregate> = buckets.into_values().collect();
@@ -259,6 +271,52 @@ mod tests {
         let kept = filter_by_min_severity(inputs, Severity::High);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].detector, "anthropic_api_key");
+    }
+
+    #[test]
+    fn aggregates_dedupe_same_location_across_detectors() {
+        // Same physical hit reported by two detectors (vendor + generic
+        // backstop on the same line) must collapse to one Location entry.
+        // Without dedup the locations Vec inflates the "found in N
+        // locations" count and breaks the README's "one entry, real
+        // location count" contract.
+        let key = "sk-aB3kQ9zL2pXn7rVfG8sJ4mTuYwDeRcHi1234";
+        let f_vendor = finding("openai_api_key", Severity::Critical, key, "a/.env", 1);
+        let f_generic = finding(
+            "generic_high_entropy_secret",
+            Severity::Medium,
+            key,
+            "a/.env",
+            1,
+        );
+        let r = Report::from_findings("test", vec![f_vendor, f_generic], false);
+        assert_eq!(r.aggregates.len(), 1, "fingerprint dedupe broken");
+        assert_eq!(
+            r.aggregates[0].locations.len(),
+            1,
+            "same (location, line) must collapse to one entry"
+        );
+        // The vendor severity wins because it's the higher tier
+        // (Critical < Medium under our inverted Ord).
+        assert_eq!(r.aggregates[0].detector, "openai_api_key");
+        assert_eq!(r.aggregates[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn aggregates_dedupe_does_not_collapse_distinct_lines() {
+        let key = "sk-aB3kQ9zL2pXn7rVfG8sJ4mTuYwDeRcHi1234";
+        // Same secret, same file, two different lines — must stay as two
+        // distinct locations.
+        let r = Report::from_findings(
+            "test",
+            vec![
+                finding("openai_api_key", Severity::Critical, key, "a/.env", 1),
+                finding("openai_api_key", Severity::Critical, key, "a/.env", 5),
+            ],
+            false,
+        );
+        assert_eq!(r.aggregates.len(), 1);
+        assert_eq!(r.aggregates[0].locations.len(), 2);
     }
 
     #[test]

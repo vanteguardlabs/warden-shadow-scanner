@@ -226,17 +226,11 @@ fn build_detectors() -> Vec<Detector> {
         // --- Developer-platform tokens -----------------------------------------
         Detector {
             name: "github_pat",
-            description: "GitHub personal access / fine-grained / OAuth token.",
+            description: "GitHub personal access / fine-grained / OAuth / App installation token.",
             severity: Severity::Critical,
+            // Covers ghp_ (classic PAT), gho_ (OAuth), ghu_ (user-to-server),
+            // ghs_ (server-to-server / App installation), ghr_ (refresh).
             pattern: r(r"\b((?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,255})\b"),
-            min_entropy: None,
-            min_length: None,
-        },
-        Detector {
-            name: "github_app_token",
-            description: "GitHub App installation token.",
-            severity: Severity::Critical,
-            pattern: r(r"\b(ghs_[A-Za-z0-9]{36,255})\b"),
             min_entropy: None,
             min_length: None,
         },
@@ -457,6 +451,19 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
         let text = "token: ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let f = scan_text(text, "test");
         assert!(f.iter().any(|x| x.detector == "github_pat"));
+    }
+
+    #[test]
+    fn github_pat_covers_all_token_prefixes() {
+        // ghs_ used to have its own dedicated detector that overlapped
+        // github_pat 1:1. After removing it, every prefix must still
+        // resolve to a single github_pat finding (not zero, not two).
+        for prefix in ["ghp", "gho", "ghu", "ghs", "ghr"] {
+            let text = format!("token: {}_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", prefix);
+            let f = scan_text(&text, "test");
+            let matches: Vec<_> = f.iter().filter(|x| x.detector == "github_pat").collect();
+            assert_eq!(matches.len(), 1, "{prefix}_ must produce exactly one github_pat finding: {f:?}");
+        }
     }
 
     #[test]

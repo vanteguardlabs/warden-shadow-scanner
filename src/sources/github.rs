@@ -105,25 +105,37 @@ impl GitHubClient {
 
     /// List every repo under `owner` (org or user). Walks paginated
     /// `/orgs/{owner}/repos` first; if that 404s, falls back to
-    /// `/users/{owner}/repos`.
+    /// `/users/{owner}/repos`. If both endpoints error out (e.g. a
+    /// 401 on bad auth), surface the last error rather than returning
+    /// an empty list — silent-empty on auth failure was masking the
+    /// real cause behind a misleading "no findings" exit 0.
     pub async fn list_repos(&self, owner: &str) -> Result<Vec<RepoSummary>> {
-        let mut out = Vec::new();
         let endpoints = [
             format!("{}/orgs/{}/repos?per_page=100&type=all", self.base_url, owner),
             format!("{}/users/{}/repos?per_page=100&type=all", self.base_url, owner),
         ];
+        let mut last_err: Option<anyhow::Error> = None;
         for ep in endpoints {
             match self.paginate_repos(ep.clone()).await {
-                Ok(v) => {
-                    out = v;
-                    if !out.is_empty() {
-                        return Ok(out);
-                    }
+                Ok(v) if !v.is_empty() => return Ok(v),
+                Ok(_) => {
+                    // Empty result is a real signal (e.g. an org with no
+                    // matching repos for this token's visibility). Keep
+                    // walking; if every endpoint comes back empty AND no
+                    // error fired, the caller gets Ok(vec![]).
                 }
-                Err(e) => tracing::debug!("repo list {} failed: {}", ep, e),
+                Err(e) => {
+                    tracing::debug!("repo list {} failed: {}", ep, e);
+                    last_err = Some(e);
+                }
             }
         }
-        Ok(out)
+        match last_err {
+            Some(e) => Err(e).with_context(|| {
+                format!("list repos for {owner}: both /orgs and /users endpoints failed")
+            }),
+            None => Ok(Vec::new()),
+        }
     }
 
     async fn paginate_repos(&self, mut url: String) -> Result<Vec<RepoSummary>> {
