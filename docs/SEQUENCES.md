@@ -29,13 +29,13 @@ sequenceDiagram
     participant Main as main
     participant Cli as clap Cli::parse
     participant Run as run_local / run_github / run_slack
-    participant Src as sources::&lt;mod&gt;::scan_*
+    participant Src as sources::mod::scan_*
     participant Emit as emit
     participant Sev as Severity::from_min + filter_by_min_severity
     participant Rep as Report::from_findings
     participant Out as write_human / write_json / write_sarif
 
-    Op->>Main: warden-shadow-scanner &lt;subcommand&gt; [...]
+    Op->>Main: warden-shadow-scanner subcommand [...]
     Main->>Main: tracing_subscriber::registry + EnvFilter (default warn, stderr writer)
     Main->>Cli: parse argv + env
     Cli-->>Main: Cli { command, OutputArgs { json, sarif, unredacted, severity_min } }
@@ -50,14 +50,14 @@ sequenceDiagram
         Main->>Run: run_slack(days, out)
         Run->>Src: sources::slack::scan_workspace(client, lookback_days)
     end
-    Src-->>Run: Vec&lt;Finding&gt; (raw, possibly multi-detector per line)
+    Src-->>Run: VecFinding (raw, possibly multi-detector per line)
     Run->>Emit: emit(source_label, findings, out)
     Emit->>Sev: Severity::from_min(out.severity_min) — error if invalid
     Sev->>Emit: Severity enum
     Emit->>Sev: filter_by_min_severity(findings, min)
-    Sev-->>Emit: filtered Vec&lt;Finding&gt;
+    Sev-->>Emit: filtered VecFinding
     Emit->>Rep: from_findings(source, filtered, unredacted && !sarif)
-    Note over Emit: SARIF always overrides --unredacted; SARIF outputs end up as CI artefacts
+    Note over Emit: SARIF always overrides --unredacted — SARIF outputs end up as CI artefacts
     Rep-->>Emit: Report { source, scanned_at, aggregates, total_findings }
     alt out.sarif
         Emit->>Out: report.write_sarif(stdout)
@@ -104,37 +104,37 @@ sequenceDiagram
     loop walker entries
         Ignore-->>Gather: DirEntry or error
         alt walk error
-            Gather->>Gather: tracing::warn — walk error; continue
+            Gather->>Gather: tracing::warn — walk error — continue
         else file_type == file
             Gather->>Gather: out.push(path.to_path_buf)
         else dir / symlink / other
             Gather->>Gather: skip
         end
     end
-    Gather-->>Scan: Vec&lt;PathBuf&gt;
+    Gather-->>Scan: VecPathBuf
     deactivate Gather
     loop every collected path
         Scan->>Scan: scan_one_file(path)
         Scan->>Tokio: metadata(path)
         alt metadata err
             Tokio-->>Scan: Err
-            Scan->>Scan: tracing::warn skip path; continue
+            Scan->>Scan: tracing::warn skip path — continue
         else size > MAX_FILE_BYTES
             Tokio-->>Scan: metadata.len() > MAX_FILE_BYTES
-            Scan->>Scan: tracing::debug skip oversized; return Vec::new
+            Scan->>Scan: tracing::debug skip oversized — return Vec::new
         end
         Scan->>Tokio: read(path)
         Tokio-->>Scan: bytes
         Scan->>Scan: looks_binary (NUL-byte heuristic, same as git uses)
         alt binary
-            Scan->>Scan: tracing::debug skip binary; return Vec::new
+            Scan->>Scan: tracing::debug skip binary — return Vec::new
         end
         Scan->>Scan: std::str::from_utf8(&bytes) — not UTF-8 → return Vec::new
         Scan->>Det: scan_text(text, path.display.to_string)
-        Det-->>Scan: Vec&lt;Finding&gt;
+        Det-->>Scan: VecFinding
         Scan->>Scan: findings.append(&mut fs)
     end
-    Scan-->>Run: Vec&lt;Finding&gt;
+    Scan-->>Run: VecFinding
 ```
 
 ## 3. `github` — owner-or-repo scan with rate-limit backoff
@@ -161,7 +161,7 @@ sequenceDiagram
 
     Run->>Cli: from_env — reads GITHUB_TOKEN (Option), base_url default
     Cli-->>Run: GitHubClient
-    Run->>Run: split owner_arg on '/' → (owner, Option&lt;repo&gt;)
+    Run->>Run: split owner_arg on '/' → (owner, Optionrepo)
     Run->>Scan: scan_owner(client, owner, repo_filter, include_forks, include_archived)
     alt repo_filter is Some(name)
         Scan->>Gh: GET /repos/{owner}/{name} (via get_json + retry loop)
@@ -174,19 +174,19 @@ sequenceDiagram
                 List->>Gh: GET url + Bearer GITHUB_TOKEN + Accept: application/vnd.github+json
                 alt 403 + X-RateLimit-Remaining: 0
                     Gh-->>List: 403 + reset header
-                    List->>List: sleep clamp(reset - now, 1, 600); retry
+                    List->>List: sleep clamp(reset - now, 1, 600) — retry
                 else 429
                     Gh-->>List: 429
-                    List->>List: sleep 30s; retry
+                    List->>List: sleep 30s — retry
                 else non-2xx
                     Gh-->>List: status + body
                     List-->>Scan: bail err
                 else 2xx
                     Gh-->>List: page JSON + Link header
-                    List->>List: parse next_link; all.extend(page)
+                    List->>List: parse next_link — all.extend(page)
                 end
             end
-            List-->>Scan: Vec&lt;RepoSummary&gt; (or last_err carried forward)
+            List-->>Scan: VecRepoSummary (or last_err carried forward)
             alt non-empty
                 Scan->>Scan: use this list, stop iterating endpoints
             end
@@ -201,7 +201,7 @@ sequenceDiagram
             Scan->>Tree: list_tree(owner, repo.name, repo.default_branch)
             Tree->>Gh: GET /repos/.../git/trees/{branch}?recursive=1
             Gh-->>Tree: TreeResponse (filtered to kind == blob)
-            Tree-->>Scan: Vec&lt;TreeEntry&gt;
+            Tree-->>Scan: VecTreeEntry
             loop every blob
                 alt size > MAX_FILE_BYTES OR has_binary_extension(path)
                     Scan->>Scan: skip
@@ -212,13 +212,13 @@ sequenceDiagram
                     Blob-->>Scan: bytes
                     Scan->>Scan: looks_binary OR utf8 decode fail → skip
                     Scan->>Det: scan_text(text, "{owner}/{repo}:{path}@{branch}")
-                    Det-->>Scan: Vec&lt;Finding&gt;
+                    Det-->>Scan: VecFinding
                     Scan->>Scan: out.extend(findings)
                 end
             end
         end
     end
-    Scan-->>Run: Vec&lt;Finding&gt;
+    Scan-->>Run: VecFinding
 ```
 
 ## 4. `slack` — workspace scan with cursor-paginated history
@@ -253,10 +253,10 @@ sequenceDiagram
         alt ok == false
             Conv-->>Scan: bail slack list_conversations: <error>
         else
-            Conv->>Conv: out.extend(channels); set cursor or break
+            Conv->>Conv: out.extend(channels) — set cursor or break
         end
     end
-    Conv-->>Scan: Vec&lt;Conversation&gt;
+    Conv-->>Scan: VecConversation
     Scan->>Scan: since_ts = Utc::now - Duration::days(lookback_days)
     loop every conversation
         alt conv.is_archived OR !conv.is_member
@@ -269,24 +269,24 @@ sequenceDiagram
                 alt ok == false
                     Hist-->>Scan: bail slack history <id>: <error>
                 else
-                    Hist->>Hist: out.extend(messages); set cursor or break
+                    Hist->>Hist: out.extend(messages) — set cursor or break
                 end
             end
-            Hist-->>Scan: Vec&lt;SlackMessage&gt;
+            Hist-->>Scan: VecSlackMessage
             loop every message
                 alt msg.text.is_empty
                     Scan->>Scan: skip
                 else
                     Scan->>Det: scan_text(msg.text, "slack://{channel_label}/{ts}")
-                    Det-->>Scan: Vec&lt;Finding&gt;
+                    Det-->>Scan: VecFinding
                     Scan->>Scan: findings.extend
                 end
             end
             Scan->>Scan: tracing::info scanned slack channel <label>
         end
     end
-    Note over Hist,Scan: per-channel fetch_history error → warn and skip that channel; whole-workspace scan continues
-    Scan-->>Run: Vec&lt;Finding&gt;
+    Note over Hist,Scan: per-channel fetch_history error → warn and skip that channel — whole-workspace scan continues
+    Scan-->>Run: VecFinding
 ```
 
 ## 5. Detector engine — `scan_text` + `Report::from_findings`
@@ -338,7 +338,7 @@ sequenceDiagram
             end
         end
     end
-    Scan-->>Caller: Vec&lt;Finding&gt;
+    Scan-->>Caller: VecFinding
 
     Caller->>Rep: Report::from_findings(source, findings, unredacted)
     loop every finding
@@ -346,7 +346,7 @@ sequenceDiagram
         FP-->>Rep: fingerprint string
         Rep->>Rep: BTreeMap entry-or-insert Aggregate { fingerprint, detector, severity, redacted(raw), raw: Some(raw) if unredacted, locations: [] }
         alt f.severity < entry.severity
-            Rep->>Rep: entry.severity = f.severity; entry.detector = f.detector — higher tier wins
+            Rep->>Rep: entry.severity = f.severity — entry.detector = f.detector — higher tier wins
         end
         alt locations contains (location, line)
             Rep->>Rep: skip — vendor and generic backstop fired on same physical hit
@@ -354,7 +354,7 @@ sequenceDiagram
             Rep->>Rep: entry.locations.push Location { location, line, context }
         end
     end
-    Rep->>Rep: collect into Vec; sort by (severity ASC, detector, fingerprint) for stable diff
+    Rep->>Rep: collect into Vec — sort by (severity ASC, detector, fingerprint) for stable diff
     Rep-->>Caller: Report { source, scanned_at: Utc::now, aggregates, total_findings }
 ```
 
